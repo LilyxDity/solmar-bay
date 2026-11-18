@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLMAR BAY — an open-world crime game</title>
+<style>
+  :root {
+    --accent: #f5c518;
+    --danger: #e5484d;
+    --good: #7bc47f;
+    --ink: #ffffff;
+    --muted: #d8d2c2;
+    --panel: rgba(18, 20, 26, 0.78);
+    --hairline: rgba(255, 255, 255, 0.18);
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #8ec9ee; color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  /* Top right: cash, clock, wanted stars. */
+  #status { position: fixed; top: 16px; right: 20px; text-align: right; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+  #cash-value { font-family: var(--font-readout); font-size: 28px; font-weight: 700; color: var(--accent); }
+  #clock-value { font-family: var(--font-readout); font-size: 15px; color: var(--muted); }
+  #wanted-stars { font-size: 26px; letter-spacing: 2px; color: rgba(255,255,255,.55); }
+  #wanted-stars.hot { color: var(--accent); }
+
+  /* Objective line, top centre. */
+  #objective {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    padding: 8px 18px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 6px;
+    font-size: 15px; font-weight: 600; text-align: center; max-width: 70vw;
+  }
+  #objective.urgent { border-color: var(--danger); color: #ffb3b5; }
+
+  /* Minimap + health, bottom left. */
+  #corner-left { position: fixed; left: 20px; bottom: 20px; display: grid; gap: 10px; }
+  #minimap { border: 2px solid rgba(255,255,255,.35); border-radius: 50%; background: #2a2f36; box-shadow: 0 4px 18px rgba(0,0,0,.45); }
+  #vitals { width: 210px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; font-family: var(--font-readout); font-size: 13px; }
+  .bar-row label { width: 52px; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+  .bar { flex: 1; height: 10px; background: rgba(0,0,0,.5); border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--good); transition: width 120ms linear; }
+  #health-fill.low { background: var(--danger); }
+  #health-num { min-width: 30px; text-align: right; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+
+  /* Speedometer + ammo, bottom right. */
+  #corner-right { position: fixed; right: 20px; bottom: 20px; text-align: right; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+  #speedo { font-family: var(--font-readout); }
+  #speed-value { font-size: 52px; font-weight: 700; line-height: 1; }
+  #speed-unit { font-size: 14px; color: var(--muted); }
+  #car-name { font-size: 14px; color: var(--muted); }
+  #ammo-readout { font-family: var(--font-readout); font-size: 18px; margin-top: 6px; }
+
+  /* Crosshair, centre. */
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; }
+  #crosshair i { position: absolute; background: #fff; opacity: .9; box-shadow: 0 0 4px rgba(0,0,0,.8); }
+  #crosshair i:nth-child(1) { left: -1px; top: -12px; width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: -1px; top: 5px; width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: -1px; left: -12px; height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: -1px; left: 5px; height: 2px; width: 7px; }
+
+  /* Context prompt, above the dialogue. */
+  #prompt {
+    position: fixed; left: 50%; bottom: 170px; transform: translateX(-50%);
+    padding: 7px 16px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 6px;
+    font-size: 15px; font-weight: 600;
+  }
+  #prompt kbd, .keys kbd {
+    padding: 1px 7px; border: 1px solid var(--hairline); border-radius: 4px;
+    background: rgba(255,255,255,.12); font-family: var(--font-readout); font-size: 13px;
+  }
+
+  /* Dialogue box, bottom centre. */
+  #dialogue {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    width: min(560px, 90vw); padding: 12px 18px; background: var(--panel);
+    border: 1px solid var(--hairline); border-radius: 8px;
+  }
+  #dialogue-who { font-size: 12px; letter-spacing: .12em; color: var(--accent); font-weight: 700; }
+  #dialogue-text { font-size: 16px; line-height: 1.45; margin-top: 2px; }
+
+  /* Centre banner for mission events. */
+  #banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; text-shadow: 0 3px 10px rgba(0,0,0,.7); }
+  #banner-title { font-size: 52px; font-weight: 800; letter-spacing: .03em; }
+  #banner-sub { font-size: 18px; color: var(--muted); margin-top: 4px; }
+
+  /* Bust progress, centre bottom. */
+  #bust-bar { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); width: 260px; text-align: center; }
+  #bust-bar p { margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: .1em; color: #ffb3b5; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+  #bust-track { height: 8px; background: rgba(0,0,0,.5); border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
+  #bust-fill { display: block; height: 100%; background: var(--danger); width: 0; }
+
+  #damage-vignette { position: fixed; inset: 0; opacity: 0; transition: opacity 150ms linear; background: radial-gradient(ellipse at center, transparent 55%, rgba(229,72,77,.5) 100%); }
+  #damage-vignette.on { opacity: 1; }
+
+  /* Overlays. */
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(10, 14, 22, 0.72); overflow-y: auto; }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(560px, 100%); padding: 34px; background: #1c2028; border: 1px solid var(--hairline); border-radius: 10px; max-height: calc(100vh - 48px); overflow-y: auto; }
+  .panel h1 { margin: 0 0 4px; font-size: 44px; line-height: 1; font-weight: 800; letter-spacing: .02em; }
+  .panel h1 span { color: var(--accent); }
+  .panel .tagline { margin: 0 0 18px; font-size: 15px; color: var(--muted); line-height: 1.5; }
+  .panel h2 { margin: 22px 0 8px; font-size: 15px; letter-spacing: .1em; color: var(--muted); }
+  #mission-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 15px; }
+  #mission-list li { padding: 8px 12px; background: rgba(255,255,255,.05); border: 1px solid var(--hairline); border-radius: 6px; }
+  #mission-list li.done { color: var(--good); }
+  #mission-list li.locked { color: #8a8f98; }
+  .btn-row { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+  button.btn {
+    font: inherit; font-weight: 700; padding: 12px 22px; border: 1px solid var(--accent);
+    border-radius: 8px; background: var(--accent); color: #181410; cursor: pointer;
+  }
+  button.btn:hover { background: #ffe14d; }
+  button.btn.ghost { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  button.btn.ghost:hover { border-color: var(--ink); }
+  .keys { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+  .keys li { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  #end-title { font-size: 44px; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="status">
+    <div id="cash-value">$250</div>
+    <div id="clock-value">10:00</div>
+    <div id="wanted-stars">☆☆☆☆☆</div>
+  </div>
+  <div id="objective"><span id="objective-text">Welcome to Solmar Bay</span></div>
+
+  <div id="corner-left">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="vitals">
+      <div class="bar-row"><label>HEALTH</label><div class="bar"><i id="health-fill" style="width:100%"></i></div><span id="health-num">100</span></div>
+    </div>
+  </div>
+
+  <div id="corner-right">
+    <div id="speedo" hidden><span id="speed-value">0</span> <span id="speed-unit">km/h</span><div id="car-name"></div></div>
+    <div id="ammo-readout">12 / 60</div>
+  </div>
+
+  <div id="crosshair" hidden><i></i><i></i><i></i><i></i></div>
+  <div id="prompt" hidden></div>
+  <div id="dialogue" hidden><div id="dialogue-who"></div><div id="dialogue-text"></div></div>
+  <div id="banner" hidden><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="bust-bar" hidden><p>BUSTED?</p><div id="bust-track"><i id="bust-fill"></i></div></div>
+  <div id="damage-vignette"></div>
+</div>
+
+<div id="start-screen" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="title">
+    <h1 id="title">SOLMAR <span>BAY</span></h1>
+    <p class="tagline">A sun-soaked coastal city, and you just arrived with $250 and a borrowed jacket. Steal cars, outrun the SBPD, run jobs for fixer Mara — and take the Bayfront docks from the crew that owns them.</p>
+    <h2>MISSIONS</h2>
+    <ul id="mission-list"></ul>
+    <div class="btn-row">
+      <button id="play-btn" class="btn" type="button">Play</button>
+      <button id="continue-btn" class="btn ghost" type="button" hidden>Continue saved game</button>
+    </div>
+    <h2>CONTROLS</h2>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move / drive &nbsp;·&nbsp; <kbd>Mouse</kbd> Look &nbsp;·&nbsp; <kbd>Click</kbd> Shoot</li>
+      <li><kbd>E</kbd> Enter / exit car, steal cars &nbsp;·&nbsp; <kbd>Space</kbd> Jump / handbrake</li>
+      <li><kbd>Shift</kbd> Sprint &nbsp;·&nbsp; <kbd>R</kbd> Reload &nbsp;·&nbsp; <kbd>F</kbd> Punch &nbsp;·&nbsp; <kbd>H</kbd> Horn</li>
+      <li><kbd>Esc</kbd> Pause &nbsp;·&nbsp; Walk into a green marker to start a mission</li>
+    </ul>
+  </section>
+</div>
+
+<div id="pause-screen" class="overlay" hidden>
+  <section class="panel" role="dialog" aria-modal="true">
+    <h1>Paused</h1>
+    <p class="tagline">Solmar Bay waits for no one — except right now.</p>
+    <div class="btn-row">
+      <button id="resume-btn" class="btn" type="button">Resume</button>
+      <button id="restart-btn" class="btn ghost" type="button">Restart (new game)</button>
+    </div>
+    <h2>CONTROLS</h2>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move / drive &nbsp;·&nbsp; <kbd>Mouse</kbd> Look &nbsp;·&nbsp; <kbd>Click</kbd> Shoot</li>
+      <li><kbd>E</kbd> Enter / exit car &nbsp;·&nbsp; <kbd>Space</kbd> Jump / handbrake &nbsp;·&nbsp; <kbd>Shift</kbd> Sprint</li>
+      <li><kbd>R</kbd> Reload &nbsp;·&nbsp; <kbd>F</kbd> Punch &nbsp;·&nbsp; <kbd>H</kbd> Horn &nbsp;·&nbsp; Progress saves automatically</li>
+    </ul>
+  </section>
+</div>
+
+<div id="end-screen" class="overlay" hidden>
+  <section class="panel" role="dialog" aria-modal="true">
+    <h1 id="end-title">BUSTED</h1>
+    <p id="end-copy" class="tagline"></p>
+    <div class="btn-row">
+      <button id="respawn-btn" class="btn" type="button">Get back out there</button>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
